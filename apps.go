@@ -1,6 +1,7 @@
 package cfclient
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -55,6 +56,65 @@ type App struct {
 	SpaceData                SpaceResource          `json:"space"`
 	PackageUpdatedAt         string                 `json:"package_updated_at"`
 	c                        *Client
+}
+
+type V3DockerApp struct {
+	Name          string `json:"name"`
+	Relationships struct {
+		Space struct {
+			Data struct {
+				GUID string `json:"guid"`
+			} `json:"data"`
+		} `json:"space"`
+	} `json:"relationships"`
+	Lifecycle struct {
+		Type string `json:"type"`
+		Data struct {
+		} `json:"data"`
+	} `json:"lifecycle"`
+}
+
+type V3DockerPackage struct {
+	Type          string `json:"type"`
+	Relationships struct {
+		App struct {
+			Data struct {
+				GUID string `json:"guid"`
+			} `json:"data"`
+		} `json:"app"`
+	} `json:"relationships"`
+	Data struct {
+		Image string `json:"image"`
+	} `json:"data"`
+}
+
+type V3DockerPackageResponse struct {
+	GUID      string `json:"guid"`
+	State     string `json:"state"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+type V3DockerBuildResponse struct {
+}
+
+type V3DockerBuild struct {
+	Package struct {
+		GUID string `json:"guid"`
+	} `json:"package"`
+}
+
+type V3DockerAppResponse struct {
+	GUID      string `json:"guid"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	Lifecycle struct {
+		Type string `json:"type"`
+		Data struct {
+		}
+	}
 }
 
 type AppInstance struct {
@@ -361,6 +421,90 @@ func (c *Client) GetAppByGuid(guid string) (App, error) {
 
 func (c *Client) AppByGuid(guid string) (App, error) {
 	return c.GetAppByGuid(guid)
+}
+
+//CreateV3DockerBuild creates a build to stage the docker image. Needs to be associated
+//with an existing package
+func (c *Client) CreateV3DockerBuild(pkgGUID string) (bld V3DockerBuildResponse, err error) {
+	v3Build := V3DockerBuild{}
+	v3Build.Package.GUID = pkgGUID
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(v3Build)
+	r := c.NewRequestWithBody("POST", "/v3/builds", b)
+	resp, err := c.DoRequest(r)
+
+	if err != nil {
+		return bld, errors.Wrap(err, "Error requesting build")
+	}
+	defer resp.Body.Close()
+	resBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return bld, errors.Wrap(err, "Error reading build response")
+	}
+
+	err = json.Unmarshal(resBody, &bld)
+	if err != nil {
+		return bld, errors.Wrap(err, "Error unmarshalling build response")
+	}
+	return bld, nil
+
+}
+
+//CreateV3DockerPackage creates the required package for an application object
+//It then needs a build associated.
+func (c *Client) CreateV3DockerPackage(appGUID, image string) (pkg V3DockerPackageResponse, err error) {
+	v3Package := V3DockerPackage{}
+	v3Package.Data.Image = image
+	v3Package.Relationships.App.Data.GUID = appGUID
+	v3Package.Type = "docker"
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(v3Package)
+	r := c.NewRequestWithBody("POST", "/v3/packages", b)
+	resp, err := c.DoRequest(r)
+
+	if err != nil {
+		return pkg, errors.Wrap(err, "Error requesting package creation")
+	}
+	defer resp.Body.Close()
+	resBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return pkg, errors.Wrap(err, "Error reading package response")
+	}
+
+	err = json.Unmarshal(resBody, &pkg)
+	if err != nil {
+		return pkg, errors.Wrap(err, "Error unmarshalling package response")
+	}
+	return pkg, nil
+}
+
+//CreateV3DockerApp takes an appname, and a GUID for space. It will then
+//create the app object and return the GUID.
+func (c *Client) CreateV3DockerApp(appName, spaceGuid string) (app V3DockerAppResponse, err error) {
+
+	v3AppSpec := V3DockerApp{}
+	v3AppSpec.Name = appName
+	v3AppSpec.Relationships.Space.Data.GUID = spaceGuid
+	v3AppSpec.Lifecycle.Type = "docker"
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(v3AppSpec)
+	r := c.NewRequestWithBody("POST", "/v3/apps", b)
+	resp, err := c.DoRequest(r)
+	if err != nil {
+		return app, errors.Wrap(err, "Error requesting app env")
+	}
+	defer resp.Body.Close()
+	resBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return app, errors.Wrap(err, "Error reading app env")
+	}
+
+	err = json.Unmarshal(resBody, &app)
+	if err != nil {
+		return app, errors.Wrap(err, "Error unmarshalling app env")
+	}
+	return app, nil
+
 }
 
 //AppByName takes an appName, and GUIDs for a space and org, and performs

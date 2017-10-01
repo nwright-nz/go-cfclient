@@ -12,6 +12,11 @@ import (
 	"github.com/pkg/errors"
 )
 
+type DropletRequest struct {
+	Data struct {
+		GUID string `json:"guid,omitempty"`
+	} `json:"data,omitempty"`
+}
 type AppResponse struct {
 	Count     int           `json:"total_results"`
 	Pages     int           `json:"total_pages"`
@@ -96,6 +101,13 @@ type V3DockerPackageResponse struct {
 }
 
 type V3DockerBuildResponse struct {
+	GUID      string `json:"guid"`
+	State     string `json:"state"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Droplet   struct {
+		GUID string `json:"guid"`
+	} `json:"droplet"`
 }
 
 type V3DockerBuild struct {
@@ -476,6 +488,57 @@ func (c *Client) CreateV3DockerPackage(appGUID, image string) (pkg V3DockerPacka
 		return pkg, errors.Wrap(err, "Error unmarshalling package response")
 	}
 	return pkg, nil
+}
+
+func (c *Client) AssignDropletToApp(appGUID, dropletGUID string) (V3DockerAppResponse, error) {
+	app := V3DockerAppResponse{}
+	droplet := DropletRequest{}
+	droplet.Data.GUID = dropletGUID
+
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(droplet)
+	r := c.NewRequestWithBody("PATCH", "/v3/apps/"+appGUID+"/relationships/current_droplet", b)
+	resp, err := c.DoRequest(r)
+	fmt.Println(r)
+
+	if err != nil {
+		fmt.Println(err)
+		return V3DockerAppResponse{}, errors.Wrap(err, "Error requesting droplet")
+	}
+	defer resp.Body.Close()
+	resBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return V3DockerAppResponse{}, errors.Wrap(err, "Error reading app response")
+	}
+
+	err = json.Unmarshal(resBody, &app)
+	if err != nil {
+		return V3DockerAppResponse{}, errors.Wrap(err, "Error unmarshalling app response")
+	}
+	return V3DockerAppResponse{}, nil
+
+}
+
+//GetV3DockerBuild checks to see if a given build has successfulyl staged, so it can
+//get the droplet guid, and apply it to the application
+func (c *Client) GetV3BuildInfo(bldGUID string) (bld V3DockerBuildResponse, err error) {
+	r := c.NewRequest("GET", "/v3/builds/"+bldGUID)
+	resp, err := c.DoRequest(r)
+	if err != nil {
+		return bld, errors.Wrap(err, "Error getting build information")
+	}
+	defer resp.Body.Close()
+	resBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return bld, errors.Wrap(err, "Error reading build response")
+	}
+
+	err = json.Unmarshal(resBody, &bld)
+	if err != nil {
+		return bld, errors.Wrap(err, "Error unmarshalling build body")
+	}
+	return bld, nil
+
 }
 
 //CreateV3DockerApp takes an appname, and a GUID for space. It will then

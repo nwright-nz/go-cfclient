@@ -17,15 +17,34 @@ type RoutesResponse struct {
 }
 
 type RoutesResource struct {
-	Meta   Meta  `json:"metadata"`
+	Meta struct {
+		GUID string `json:"guid"`
+	} `json:"metadata"`
 	Entity Route `json:"entity"`
 }
 
 type RouteRequest struct {
 	DomainGuid string `json:"domain_guid"`
 	SpaceGuid  string `json:"space_guid"`
+	Host       string `json:"host,omitempty"`
 }
 
+type RouteMap struct {
+	AppGUID   string `json:"app_guid"`
+	RouteGUID string `json:"route_guid"`
+}
+
+type MappedRoute struct {
+	Metadata struct {
+		GUID      string `json:"guid"`
+		URL       string `json:"url"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+	} `json:"metadata"`
+	Entity struct {
+		Port int `json:"app_port"`
+	}
+}
 type Route struct {
 	Guid                string `json:"guid"`
 	Host                string `json:"host"`
@@ -45,6 +64,38 @@ func (c *Client) CreateTcpRoute(routeRequest RouteRequest) (Route, error) {
 	return routesResource.Entity, nil
 }
 
+func (c *Client) CreateHttpRoute(routeRequest RouteRequest) (RoutesResource, error) {
+	routesResource, err := c.createRoute("/v2/routes", routeRequest)
+	if nil != err {
+		return RoutesResource{}, err
+	}
+	return routesResource, nil
+}
+
+func (c *Client) MapRoute(routeMap RouteMap) (mr MappedRoute, err error) {
+	buf := bytes.NewBuffer(nil)
+	jsonErr := json.NewEncoder(buf).Encode(routeMap)
+	requestURL := "/v2/route_mappings"
+	if jsonErr != nil {
+		return mr, errors.Wrap(err, "Error mapping route - failed to serialize request body")
+	}
+	r := c.NewRequestWithBody("POST", requestURL, buf)
+	resp, err := c.DoRequest(r)
+	if err != nil {
+		return mr, errors.Wrap(err, "Error creating route")
+	}
+	resBody, err := ioutil.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		return mr, errors.Wrap(err, "Error creating route")
+	}
+	err = json.Unmarshal(resBody, &mr)
+	if err != nil {
+		return mr, errors.Wrap(err, "Error unmarshalling routes")
+	}
+	return mr, nil
+
+}
 func (c *Client) ListRoutesByQuery(query url.Values) ([]Route, error) {
 	return c.fetchRoutes("/v2/routes?" + query.Encode())
 }
@@ -57,7 +108,7 @@ func (c *Client) fetchRoutes(requestUrl string) ([]Route, error) {
 			return []Route{}, err
 		}
 		for _, route := range routesResp.Resources {
-			route.Entity.Guid = route.Meta.Guid
+			route.Entity.Guid = route.Meta.GUID
 			route.Entity.c = c
 			routes = append(routes, route.Entity)
 		}

@@ -572,6 +572,16 @@ func (c *Client) CreateV3DockerApp(appName, spaceGuid string) (app V3DockerAppRe
 
 }
 
+func (c *Client) StartApp(appGUID string) (app V3DockerAppResponse, err error) {
+	cfUpdateRequest := c.NewRequest("POST", "/v3/apps/"+appGUID+"/actions/start")
+	_, err = c.DoRequest(cfUpdateRequest)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return app, err
+}
+
 //CreateV3DockerAppWithEnv takes an appname, a guid for the space and a map of strings for the environment vars.
 // It will then create the app object
 func (c *Client) CreateV3DockerAppWithEnv(appName, spaceGuid string, vars map[string]string) (app V3DockerAppResponse, err error) {

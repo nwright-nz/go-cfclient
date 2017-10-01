@@ -17,6 +17,7 @@ type DropletRequest struct {
 		GUID string `json:"guid,omitempty"`
 	} `json:"data,omitempty"`
 }
+
 type AppResponse struct {
 	Count     int           `json:"total_results"`
 	Pages     int           `json:"total_pages"`
@@ -64,8 +65,9 @@ type App struct {
 }
 
 type V3DockerApp struct {
-	Name          string `json:"name"`
-	Relationships struct {
+	Name                 string            `json:"name"`
+	EnvironmentVariables map[string]string `json:"environment_variables,omitempty"`
+	Relationships        struct {
 		Space struct {
 			Data struct {
 				GUID string `json:"guid"`
@@ -549,6 +551,36 @@ func (c *Client) CreateV3DockerApp(appName, spaceGuid string) (app V3DockerAppRe
 	v3AppSpec.Name = appName
 	v3AppSpec.Relationships.Space.Data.GUID = spaceGuid
 	v3AppSpec.Lifecycle.Type = "docker"
+	b := new(bytes.Buffer)
+	json.NewEncoder(b).Encode(v3AppSpec)
+	r := c.NewRequestWithBody("POST", "/v3/apps", b)
+	resp, err := c.DoRequest(r)
+	if err != nil {
+		return app, errors.Wrap(err, "Error requesting app env")
+	}
+	defer resp.Body.Close()
+	resBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return app, errors.Wrap(err, "Error reading app env")
+	}
+
+	err = json.Unmarshal(resBody, &app)
+	if err != nil {
+		return app, errors.Wrap(err, "Error unmarshalling app env")
+	}
+	return app, nil
+
+}
+
+//CreateV3DockerAppWithEnv takes an appname, a guid for the space and a map of strings for the environment vars.
+// It will then create the app object
+func (c *Client) CreateV3DockerAppWithEnv(appName, spaceGuid string, vars map[string]string) (app V3DockerAppResponse, err error) {
+
+	v3AppSpec := V3DockerApp{}
+	v3AppSpec.Name = appName
+	v3AppSpec.Relationships.Space.Data.GUID = spaceGuid
+	v3AppSpec.Lifecycle.Type = "docker"
+	v3AppSpec.EnvironmentVariables = vars
 	b := new(bytes.Buffer)
 	json.NewEncoder(b).Encode(v3AppSpec)
 	r := c.NewRequestWithBody("POST", "/v3/apps", b)
